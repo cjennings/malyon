@@ -170,6 +170,12 @@ is changed after the next turn (read or read_char).")
   "The amount by which packed addresses are multiplied to get byte
 addresses.")
 
+(defvar malyon-story-checksum nil
+  "Checksum of the story file, computed once over the pristine load image.
+The `verify' opcode compares this against the header checksum. It is cached
+because the file's integrity is fixed at load time; summing live memory would
+wrongly fail once the game writes into its dynamic-memory region.")
+
 (defvar malyon-global-variables nil
   "A pointer to the global variable section in the story file.")
 
@@ -691,6 +697,26 @@ bugs, testing, suggesting and/or contributing improvements:
         ((< var 16) (malyon-store-local-variable var value))
         (t          (malyon-store-global-variable (- var 16) value))))
 
+;; The Z-machine standard requires the seven indirect-reference opcodes (load,
+;; store, inc, dec, inc_chk, dec_chk, pull) to access the stack *in place* when
+;; their variable operand is the stack pointer (0): the top item is read or
+;; written without being popped or pushed. These two accessors implement that
+;; in-place variant; every other variable read/write uses the pop/push forms
+;; above.
+
+(defsubst malyon-read-variable-in-place (variable)
+  "Read VARIABLE, peeking the top of stack in place when VARIABLE is 0."
+  (cond ((= variable 0)  (aref malyon-stack malyon-stack-pointer))
+        ((< variable 16) (malyon-read-local-variable variable))
+        (t               (malyon-read-global-variable (- variable 16)))))
+
+(defsubst malyon-store-variable-in-place (variable value)
+  "Store VALUE in VARIABLE, replacing the top of stack in place when VARIABLE is 0."
+  (setq value (logand 65535 value))
+  (cond ((= variable 0)  (aset malyon-stack malyon-stack-pointer value))
+        ((< variable 16) (malyon-store-local-variable variable value))
+        (t               (malyon-store-global-variable (- variable 16) value))))
+
 ;; list of opcodes
 
 (defvar malyon-opcodes
@@ -920,8 +946,21 @@ bugs, testing, suggesting and/or contributing improvements:
   (malyon-initialize-registers)
   (malyon-initialize-opcodes)
   (malyon-history-clear)
+  ;; Cache the file checksum while memory ≥ 0x40 is still pristine (the header
+  ;; setup above only touches bytes below 0x40).
+  (setq malyon-story-checksum (malyon-compute-story-checksum))
   (setq malyon-game-state-restart (malyon-current-game-state))
   (malyon-print-header))
+
+(defun malyon-compute-story-checksum ()
+  "Return the unsigned sum mod 65536 of story bytes from 0x40 to the file end."
+  (let ((length (* malyon-packed-multiplier (malyon-read-word 26)))
+        (sum    0)
+        (i      64))
+    (while (< i length)
+      (setq sum (logand 65535 (+ sum (malyon-read-byte i)))
+            i   (+ 1 i)))
+    sum))
 
 (defun malyon-initialize-status ()
   "Initialize the status buffer."
@@ -2477,8 +2516,12 @@ Repeat ad infinitum."
   (throw 'malyon-end-of-interpreter-loop 'malyon-waiting-for-input))
 
 (defun malyon-opcode-art-shift (value places)
-  "Arithmetic shift."
-  (malyon-store-variable (malyon-read-code-byte) (ash value places)))
+  "Arithmetic shift.
+PLACES arrives as an unsigned 16-bit operand; a right shift is a negative
+count, so it must be sign-converted first. VALUE is sign-extended so a right
+shift preserves the sign bit (the arithmetic shift)."
+  (malyon-store-variable (malyon-read-code-byte)
+                         (ash (malyon-number value) (malyon-number places))))
 
 (defun malyon-opcode-buffer-mode (mode)
   "Toggles buffering of text in the transcript window."
@@ -2536,15 +2579,19 @@ Repeat ad infinitum."
             b (if forward (+ b 1) (- b 1))))))
 
 (defun malyon-opcode-dec (var)
-  "Decrement variable."
-  (malyon-store-variable var
-                         (- (malyon-number (malyon-read-variable var)) 1)))
+  "Decrement variable.
+An indirect reference: the stack (VAR 0) is read and written in place."
+  (malyon-store-variable-in-place
+   var (- (malyon-number (malyon-read-variable-in-place var)) 1)))
 
 (defun malyon-opcode-dec-chk (variable threshold)
-  "Decrement variable and jump if it's less than the given value."
-  (let ((value (malyon-number (malyon-read-variable variable))))
-    (malyon-store-variable variable (- value 1))
-    (malyon-jump-if (< (- value 1) (malyon-number threshold)))))
+  "Decrement variable and jump if it's less than the given value.
+An indirect reference: the stack (VARIABLE 0) is read and written in place.
+The comparison is signed on the 16-bit-wrapped result, so it stays correct at
+the signed boundary (decrementing 0x8000 wraps to a positive value)."
+  (let ((value (logand 65535 (- (malyon-read-variable-in-place variable) 1))))
+    (malyon-store-variable-in-place variable value)
+    (malyon-jump-if (< (malyon-number value) (malyon-number threshold)))))
 
 (defun malyon-opcode-div (a b)
   "Division."
@@ -2678,15 +2725,19 @@ The result is stored at encoded."
   (malyon-fatal-error "illegal opcode."))
 
 (defun malyon-opcode-inc (var)
-  "Increment variable."
-  (malyon-store-variable var
-                         (+ (malyon-number (malyon-read-variable var)) 1)))
+  "Increment variable.
+An indirect reference: the stack (VAR 0) is read and written in place."
+  (malyon-store-variable-in-place
+   var (+ (malyon-number (malyon-read-variable-in-place var)) 1)))
 
 (defun malyon-opcode-inc-chk (variable threshold)
-  "Increment variable and jump if it's greater than the given value."
-  (let ((value (malyon-number (malyon-read-variable variable))))
-    (malyon-store-variable variable (+ value 1))
-    (malyon-jump-if (> (+ value 1) (malyon-number threshold)))))
+  "Increment variable and jump if it's greater than the given value.
+An indirect reference: the stack (VARIABLE 0) is read and written in place.
+The comparison is signed on the 16-bit-wrapped result, so it stays correct at
+the signed boundary (incrementing 0x7FFF wraps to a negative value)."
+  (let ((value (logand 65535 (+ 1 (malyon-read-variable-in-place variable)))))
+    (malyon-store-variable-in-place variable value)
+    (malyon-jump-if (> (malyon-number value) (malyon-number threshold)))))
 
 (defun malyon-opcode-input-stream (number)
   "Select the given input stream. Only the keyboard is supported."
@@ -2730,9 +2781,10 @@ The result is stored at encoded."
   (malyon-jump-if (zerop a)))
 
 (defun malyon-opcode-load (variable)
-  "Load a variable."
+  "Load a variable.
+An indirect reference: reading the stack (VARIABLE 0) peeks the top in place."
   (malyon-store-variable (malyon-read-code-byte)
-                         (malyon-read-variable variable)))
+                         (malyon-read-variable-in-place variable)))
 
 (defun malyon-opcode-loadb (array index)
   "Load an array element into a variable."
@@ -2745,13 +2797,21 @@ The result is stored at encoded."
                          (malyon-read-word (+ array (* 2 index)))))
 
 (defun malyon-opcode-log-shift (value places)
-  "Logical shift."
-  (malyon-store-variable (malyon-read-code-byte) (lsh value places)))
+  "Logical shift.
+PLACES arrives as an unsigned 16-bit operand; a right shift is a negative
+count, so it must be sign-converted first. VALUE is treated as unsigned, so
+the right shift zero-fills (the logical shift)."
+  (malyon-store-variable (malyon-read-code-byte)
+                         (ash (logand 65535 value) (malyon-number places))))
 
 (defun malyon-opcode-mod (a b)
   "Modulo."
+  (if (zerop b) (malyon-fatal-error "division by 0."))
+  ;; The Z-machine spec requires truncated modulo, whose result takes the sign
+  ;; of the dividend; Elisp `mod' is floored (sign of the divisor), so it gives
+  ;; the wrong sign for negative operands. `%' is the truncated remainder.
   (malyon-store-variable (malyon-read-code-byte)
-                         (mod (malyon-number a) (malyon-number b))))
+                         (% (malyon-number a) (malyon-number b))))
 
 (defun malyon-opcode-mul (a b)
   "Multiplication."
@@ -2846,8 +2906,9 @@ The result is stored at encoded."
   "Prints a unicode character.")
 
 (defun malyon-opcode-pull (variable)
-  "Pull value off stack."
-  (malyon-store-variable variable (malyon-pop-stack)))
+  "Pull value off stack.
+An indirect reference: storing to the stack (VARIABLE 0) replaces the top in place."
+  (malyon-store-variable-in-place variable (malyon-pop-stack)))
 
 (defun malyon-opcode-push (value)
   "Push value onto stack."
@@ -2873,11 +2934,19 @@ The result is stored at encoded."
   (throw 'malyon-end-of-interpreter-loop 'malyon-opcode-quit))
 
 (defun malyon-opcode-random (limit)
-  "Generate a random number or set the seed value."
-  (malyon-store-variable (malyon-read-code-byte)
-                         (if (>= 0 (malyon-number limit))
-                             0
-                           (+ 1 (random (malyon-number limit))))))
+  "Generate a random number, or (re)seed the generator.
+LIMIT > 0 returns a random integer in 1..LIMIT. LIMIT = 0 reseeds the
+generator unpredictably; LIMIT < 0 seeds it to a fixed value so that the
+sequence becomes reproducible.  Both seeding cases store 0, per the Z-machine
+standard.  The previous implementation ignored seeding, so a game seeding the
+generator (e.g. for reproducible testing) got an unseeded sequence."
+  (let ((store (malyon-read-code-byte))
+        (n     (malyon-number limit)))
+    (cond ((> n 0)
+           (malyon-store-variable store (+ 1 (random n))))
+          (t
+           (random (if (zerop n) t (number-to-string n)))
+           (malyon-store-variable store 0)))))
 
 (defun malyon-opcode-read-char (&optional device &rest ignore)
   "Read a character."
@@ -3047,8 +3116,9 @@ The result is stored at encoded."
   (malyon-set-window-configuration size))
 
 (defun malyon-opcode-store (variable value)
-  "Store a value in a variable."
-  (malyon-store-variable variable value))
+  "Store a value in a variable.
+An indirect reference: storing to the stack (VARIABLE 0) replaces the top in place."
+  (malyon-store-variable-in-place variable value))
 
 (defun malyon-opcode-storeb (array index value)
   "Store a value in an array at the given index."
@@ -3114,14 +3184,11 @@ The result is stored at encoded."
     (malyon-store-byte (+ 1 parse) i)))
 
 (defun malyon-opcode-verify ()
-  "Verify the correctness of the story file."
-  (let ((length (+ 1 (* malyon-packed-multiplier (malyon-read-word 26))))
-        (sum    0)
-        (i      64))
-    (while (< i length)
-      (setq sum (mod (+ sum (malyon-read-byte i)) 65536)
-            i   (+ 1 i)))
-    (malyon-jump-if (= (malyon-read-word 28) sum))))
+  "Verify the correctness of the story file.
+Branches when the file checksum matches the header checksum. The checksum is
+the cached load-time value (see `malyon-story-checksum'), not a fresh sum of
+live memory, which the game may have altered in its dynamic-memory region."
+  (malyon-jump-if (= (malyon-read-word 28) malyon-story-checksum)))
 
 ;; keymap utilities
 
