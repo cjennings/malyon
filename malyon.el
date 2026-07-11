@@ -75,6 +75,46 @@
 
 ;; Enjoy!
 
+;; Architecture (for maintainers):
+
+;; The Z-machine is a virtual machine designed by Infocom for interactive
+;; fiction. A story file is a memory image with a header, then dynamic
+;; memory (writable), then static and high memory (read-only). Malyon loads
+;; that image into the vector `malyon-story-file' and interprets it.
+
+;; Execution. `malyon-execute' is the fetch/decode/execute loop: it reads an
+;; opcode byte, fetches operands according to the instruction form (long,
+;; short, variable, extended), and dispatches through the `malyon-opcodes'
+;; vector to a `malyon-opcode-*' function. Interpreter state is a set of
+;; globals: the value stack with its stack and frame pointers, the program
+;; counter `malyon-instruction-pointer', and the story image itself.
+;; Routine calls push a frame with local variables; variables number 0 (the
+;; stack), 1-15 (locals), and 16+ (globals in dynamic memory).
+
+;; Text. Strings are packed five-bit Z-characters over three shiftable
+;; alphabets, with abbreviations and a ten-bit ZSCII escape. The decoder is
+;; a small state machine (`malyon-print-ztext' and the print-state helpers);
+;; encoding and the dictionary tokeniser reverse the process for the parser.
+;; ZSCII codes map to Unicode for display and back for the memory stream.
+
+;; I/O is event-driven, not blocking. Output goes to the transcript and
+;; status buffers (and optionally the memory stream 3). When a game asks for
+;; input, the interpreter installs a buffer keymap and throws
+;; `malyon-end-of-interpreter-loop' to hand control back to Emacs' command
+;; loop; a keymap command (`malyon-end-input' for a line, `malyon-wait-char'
+;; for a key) collects the input and re-enters `malyon-execute'.
+
+;; Objects live in an object table (attributes and a property list per
+;; object) forming a parent/child/sibling tree. Save and restore serialise
+;; the machine state to disk, in Quetzal format by default (IFhd/CMem/Stks
+;; chunks) or the legacy format in compatibility mode.
+
+;; Versions 3, 5, and 8 differ in object and property table layout, address
+;; packing, and a few opcode meanings (e.g. 1OP:15 is `not' before version 5
+;; and `call_1n' from version 5 on). `malyon-initialize-opcodes' patches the
+;; dispatch table for the running version; the czech and praxix conformance
+;; suites under tests/ exercise all three.
+
 ;;; Code:
 
 ;; global variables - moved here to appease the byte-code compiler
