@@ -225,7 +225,13 @@ wrongly fail once the game writes into its dynamic-memory region.")
   "The machine state for implementing restart.")
 
 (defvar malyon-game-state-undo nil
-  "The machine state for implementing undo.")
+  "A stack of saved machine states implementing multi-level undo.
+save_undo pushes; restore_undo pops. The oldest entry is dropped once the
+stack exceeds `malyon-undo-levels', so undo depth is bounded but memory can't
+grow without limit.")
+
+(defconst malyon-undo-levels 32
+  "How many undo states to retain. Deeper undo drops the oldest state.")
 
 (defvar malyon-game-state-quetzal t
   "Store game state information for quetzal.")
@@ -1284,11 +1290,15 @@ bugs, testing, suggesting and/or contributing improvements:
         (malyon-add-output-stream 1 0))))
 
 (defsubst malyon-output-character (char)
-  "Output a single character on all active streams."
-  (setq char (malyon-zscii-to-unicode char))
-  (if malyon-output-streams-tables
-      (malyon-putchar-table char (car malyon-output-streams-tables))
-    (mapc (lambda (s) (funcall s char)) malyon-output-streams)))
+  "Output a single character on all active streams.
+CHAR is a ZSCII code. ZSCII 0 (null) has no effect. Stream 3 (the memory
+stream) stores the raw ZSCII byte, so it must not go through the Unicode
+round-trip; the screen and printer streams receive the Unicode translation."
+  (unless (zerop char)
+    (if malyon-output-streams-tables
+        (malyon-putchar-table char (car malyon-output-streams-tables))
+      (let ((uni (malyon-zscii-to-unicode char)))
+        (mapc (lambda (s) (funcall s uni)) malyon-output-streams)))))
 
 ;; printing text
 
@@ -1426,8 +1436,9 @@ bugs, testing, suggesting and/or contributing improvements:
       (delete-char 1))))
 
 (defun malyon-putchar-table (char table)
-  "Print a single character into a table."
-  (setq char (malyon-unicode-to-zscii char))
+  "Store a single ZSCII character CHAR into stream-3 TABLE.
+The first word of the table holds the running count; characters follow it.
+CHAR is already a ZSCII code, so it is stored as-is."
   (malyon-store-byte (+ 2 table (malyon-read-word table)) char)
   (malyon-store-word table (+ 1 (malyon-read-word table))))
 
@@ -2984,10 +2995,16 @@ generator (e.g. for reproducible testing) got an unseeded sequence."
       (malyon-store-variable (malyon-read-code-byte) result))))
 
 (defun malyon-opcode-restore-undo ()
-  "Restore game state for undo."
+  "Restore game state for undo.
+On success the saved state is reinstalled, which resets the instruction
+pointer to the matching save_undo's store byte; storing 2 there makes
+execution resume just after save_undo with result 2. With no saved state,
+fail by storing 0 into restore_undo's own result variable."
   (if malyon-game-state-undo
-      (malyon-set-game-state malyon-game-state-undo))
-  (malyon-store-variable (malyon-read-code-byte) 2))
+      (progn
+        (malyon-set-game-state (pop malyon-game-state-undo))
+        (malyon-store-variable (malyon-read-code-byte) 2))
+    (malyon-store-variable (malyon-read-code-byte) 0)))
 
 (defun malyon-opcode-ret (value)
   "Return a value."
@@ -3015,9 +3032,17 @@ generator (e.g. for reproducible testing) got an unseeded sequence."
       (malyon-store-variable (malyon-read-code-byte) result))))
 
 (defun malyon-opcode-save-undo ()
-  "Save game state for undo."
-  (setq malyon-game-state-undo (malyon-current-game-state))
-  (malyon-store-byte (malyon-read-code-byte) 1))
+  "Save game state for undo.
+Pushes the current state onto the undo stack and stores 1 into the result
+variable to report a successful save. The snapshot captures the instruction
+pointer at the store byte, so a later restore_undo rewinds to this point and
+re-stores 2 into the same variable. The old code used `malyon-store-byte',
+which wrote 1 to a memory address instead of the result variable, and kept
+only one undo slot, so a second restore looped back to the same point."
+  (push (malyon-current-game-state) malyon-game-state-undo)
+  (when (> (length malyon-game-state-undo) malyon-undo-levels)
+    (setcdr (nthcdr (1- malyon-undo-levels) malyon-game-state-undo) nil))
+  (malyon-store-variable (malyon-read-code-byte) 1))
 
 (defun malyon-opcode-scan-table (x table len &optional form)
   "Scan the given table for the first occurrence of x."
