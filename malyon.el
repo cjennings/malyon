@@ -1,4 +1,4 @@
-;;; malyon.el --- mode to execute Z-code files version 3, 5, 8
+;;; malyon.el --- mode to execute Z-code files version 3, 5, 8  -*- lexical-binding: t; -*-
 
 ;; Author: Peter Ilberg <peter.ilberg@gmail.com>, Christopher Madsen <cjm@cjmweb.net>, Erik Selberg <erik@selberg.org>
 ;; Maintainer: Christopher Madsen <cjm@cjmweb.net>, Erik Selberg <erik@selberg.org>
@@ -638,18 +638,18 @@ bugs, testing, suggesting and/or contributing improvements:
 (defsubst malyon-read-word (address)
   "Read a word at address in the story file."
   (if (<= 0 address)
-      (logior (lsh (aref malyon-story-file address) 8)
+      (logior (ash (aref malyon-story-file address) 8)
               (aref malyon-story-file (+ 1 address)))
-    (logior (lsh (aref malyon-story-file (+ 65536 address)) 8)
+    (logior (ash (aref malyon-story-file (+ 65536 address)) 8)
             (aref malyon-story-file (+ 65537 address)))))
 
 (defsubst malyon-store-word (address value)
   "Store a word at address in the story file."
   (if (<= 0 address)
       (progn
-        (aset malyon-story-file address (logand 255 (lsh value -8)))
+        (aset malyon-story-file address (logand 255 (ash value -8)))
         (aset malyon-story-file (+ 1 address) (logand 255 value)))
-    (aset malyon-story-file (+ 65536 address) (logand 255 (lsh value -8)))
+    (aset malyon-story-file (+ 65536 address) (logand 255 (ash value -8)))
     (aset malyon-story-file (+ 65537 address) (logand 255 value))))
 
 (defsubst malyon-read-code-byte ()
@@ -1345,7 +1345,7 @@ round-trip; the screen and printer streams receive the Unicode translation."
   "Returns an initial state for the ztext decoder."
   (malyon-print-state-new nil -6 0 0 0))
 
-(defsubst malyon-print-state-next (x ignore shift abbr zscii z)
+(defsubst malyon-print-state-next (x _ignore shift abbr zscii z)
   "Print state transition function."
   (cond ((= zscii 2)
          (malyon-print-state-new (+ z x) -6 0 0 0))
@@ -1391,8 +1391,8 @@ round-trip; the screen and printer streams receive the Unicode translation."
     (while (zerop (logand 128 high))
       (setq high (malyon-read-byte address))
       (setq low  (malyon-read-byte (+ 1 address)))
-      (setq a    (logand 31 (lsh high -2)))
-      (setq b    (logand 31 (logior (lsh high 3) (lsh low -5))))
+      (setq a    (logand 31 (ash high -2)))
+      (setq b    (logand 31 (logior (ash high 3) (ash low -5))))
       (setq c    (logand 31 low))
       (setq state (apply 'malyon-print-state-next a state))
       (if (car state) (malyon-output-character (car state)))
@@ -1442,7 +1442,7 @@ CHAR is already a ZSCII code, so it is stored as-is."
   (malyon-store-byte (+ 2 table (malyon-read-word table)) char)
   (malyon-store-word table (+ 1 (malyon-read-word table))))
 
-(defun malyon-putchar-printer (char)
+(defun malyon-putchar-printer (_char)
   "Print a single character onto a printer."); not yet implemented
 
 ;; more
@@ -1537,8 +1537,8 @@ CHAR is already a ZSCII code, so it is stored as-is."
 	(b (cadr  list))
 	(c (cl-caddr list))
 	(x (if (zerop stop) 0 128)))
-    (list (logior x (logand 255 (logior (lsh a 2) (lsh b -3))))
-          (logand 255 (logior (lsh b 5) c)))))
+    (list (logior x (logand 255 (logior (ash a 2) (ash b -3))))
+          (logand 255 (logior (ash b 5) c)))))
 
 (defun malyon-encode-dictionary-word (l)
   "Converts a list of ztext characters into a dictionary word."
@@ -1636,7 +1636,7 @@ CHAR is already a ZSCII code, so it is stored as-is."
   (let* ((index (malyon-char-in-string c malyon-alphabet))
          (shift (floor index 26))
          (char  (+ 6 (mod index 26))))
-    (cond ((> shift 2) (list 5 6 (logand 31 (lsh c -5)) (logand 31 c)))
+    (cond ((> shift 2) (list 5 6 (logand 31 (ash c -5)) (logand 31 c)))
           ((= shift 2) (list 5 char))
           ((= shift 1) (list 4 char))
           (t           (list char)))))
@@ -1743,7 +1743,7 @@ CHAR is already a ZSCII code, so it is stored as-is."
 
 (defun malyon-split-buffer-windows (status)
   "Split the buffer windows.
-The status buffer gets 'status' lines while the transcript buffer
+The status buffer gets STATUS lines while the transcript buffer
 gets the remaining lines."
   (delete-other-windows (get-buffer-window (current-buffer)))
   (setq malyon-status-buffer-lines status)
@@ -1791,14 +1791,14 @@ gets the remaining lines."
 
 (defsubst malyon-write-word-to-file (word)
   "Write a word to the last opened file."
-  (insert-char (logand 255 (lsh word -8)) 1)
+  (insert-char (logand 255 (ash word -8)) 1)
   (insert-char (logand 255 word) 1))
 
 (defsubst malyon-write-dword-to-file (dword)
   "Write a dword to the last opened file."
-  (insert-char (logand 255 (lsh dword -24)) 1)
-  (insert-char (logand 255 (lsh dword -16)) 1)
-  (insert-char (logand 255 (lsh dword -8)) 1)
+  (insert-char (logand 255 (ash dword -24)) 1)
+  (insert-char (logand 255 (ash dword -16)) 1)
+  (insert-char (logand 255 (ash dword -8)) 1)
   (insert-char (logand 255 dword) 1))
 
 (defsubst malyon-write-chunk-id-to-file (id)
@@ -1814,13 +1814,13 @@ gets the remaining lines."
 
 (defsubst malyon-read-word-from-file ()
   "Read the next word from the last opened file."
-  (logior (lsh (malyon-read-byte-from-file) 8) (malyon-read-byte-from-file)))
+  (logior (ash (malyon-read-byte-from-file) 8) (malyon-read-byte-from-file)))
 
 (defsubst malyon-read-dword-from-file ()
   "Read the next dword from the last opened file."
-  (logior (lsh (malyon-read-byte-from-file) 24)
-          (lsh (malyon-read-byte-from-file) 16)
-          (lsh (malyon-read-byte-from-file) 8)
+  (logior (ash (malyon-read-byte-from-file) 24)
+          (ash (malyon-read-byte-from-file) 16)
+          (ash (malyon-read-byte-from-file) 8)
           (malyon-read-byte-from-file)))
 
 (defsubst malyon-read-chunk-id-from-file ()
@@ -1914,8 +1914,8 @@ gets the remaining lines."
   (malyon-write-word-to-file (malyon-read-word 20))
   (malyon-write-word-to-file (malyon-read-word 22))
   (malyon-write-word-to-file (malyon-read-word 28))
-  (malyon-write-byte-to-file (lsh (aref state 0) -16))
-  (malyon-write-byte-to-file (lsh (aref state 0) -8))
+  (malyon-write-byte-to-file (ash (aref state 0) -16))
+  (malyon-write-byte-to-file (ash (aref state 0) -8))
   (malyon-write-byte-to-file (aref state 0))
   (malyon-write-byte-to-file 0))
 
@@ -1973,15 +1973,15 @@ gets the remaining lines."
          (eval-stack  (aref frame 7)))
     (if (> frame-id 0)
         (malyon-save-quetzal-stack-frame previous-fp previous-sp stack))
-    (malyon-write-byte-to-file (lsh return-addr -16))
-    (malyon-write-byte-to-file (lsh return-addr -8))
+    (malyon-write-byte-to-file (ash return-addr -16))
+    (malyon-write-byte-to-file (ash return-addr -8))
     (malyon-write-byte-to-file return-addr)
     (if (zerop frame-id)
         (malyon-write-byte-to-file 0)
       (malyon-write-byte-to-file (logior (if result-addr 0 16)
                                          (length local-vars))))
     (malyon-write-byte-to-file (if result-addr result-addr 0))
-    (malyon-write-byte-to-file (- (lsh 1 num-args) 1))
+    (malyon-write-byte-to-file (- (ash 1 num-args) 1))
     (malyon-write-word-to-file (length eval-stack))
     (while (not (null local-vars))
       (malyon-write-word-to-file (car local-vars))
@@ -2107,15 +2107,15 @@ gets the remaining lines."
           ((null malyon-restore-data-error)
            (setq malyon-restore-data-error "invalid quetzal file.")))))
 
-(defun malyon-restore-quetzal-ifhd (size)
+(defun malyon-restore-quetzal-ifhd (_size)
   "Restore an IFhd chunk from disk. Return the instruction pointer."
   (if (and (= (malyon-read-word-from-file) (malyon-read-word 2))
            (= (malyon-read-word-from-file) (malyon-read-word 18))
            (= (malyon-read-word-from-file) (malyon-read-word 20))
            (= (malyon-read-word-from-file) (malyon-read-word 22))
            (= (malyon-read-word-from-file) (malyon-read-word 28)))
-      (logior (lsh (malyon-read-byte-from-file) 16)
-              (lsh (malyon-read-byte-from-file) 8)
+      (logior (ash (malyon-read-byte-from-file) 16)
+              (ash (malyon-read-byte-from-file) 8)
               (malyon-read-byte-from-file))
     (setq malyon-restore-data-error "quetzal file doesn't belong to game.")
     nil))
@@ -2156,7 +2156,7 @@ stack pointer, the frame pointer, and the stack itself."
              (return3       (malyon-read-byte-from-file))
              (return2       (malyon-read-byte-from-file))
              (return1       (malyon-read-byte-from-file))
-             (return-addr   (logior (lsh return3 16) (lsh return2 8) return1))
+             (return-addr   (logior (ash return3 16) (ash return2 8) return1))
              (result-locals (malyon-read-byte-from-file))
              (has-result    (zerop (logand 16 result-locals)))
              (num-locals    (logand 15 result-locals))
@@ -2173,7 +2173,7 @@ stack pointer, the frame pointer, and the stack itself."
           (setq eval-stack (cons (malyon-read-word-from-file) eval-stack))
           (setq eval-size (- eval-size 1)))
         (while (> arg-flags 1)
-          (setq arg-flags (lsh arg-flags -1))
+          (setq arg-flags (ash arg-flags -1))
           (setq num-args (+ num-args 1)))
         (malyon-push-stack-frame frame-id
                                  return-addr
@@ -2253,8 +2253,8 @@ stack pointer, the frame pointer, and the stack itself."
   "Get the address of the following property."
   (let ((size (malyon-read-byte property))
         (addr (+ property 1)))
-    (+ 1 addr (cond ((< malyon-story-version 5) (lsh size -5))
-                    ((zerop (logand 128 size))  (lsh size -6))
+    (+ 1 addr (cond ((< malyon-story-version 5) (ash size -5))
+                    ((zerop (logand 128 size))  (ash size -6))
                     (t
                      (let ((second (logand 63 (malyon-read-byte addr))))
                        (if (= 0 second) 64 second)))))))
@@ -2288,13 +2288,13 @@ stack pointer, the frame pointer, and the stack itself."
     (malyon-push-stack (if result result 0))
     (malyon-push-stack malyon-instruction-pointer)
     (malyon-push-stack
-     (logior (lsh (- malyon-stack-pointer malyon-frame-pointer) 8)
+     (logior (ash (- malyon-stack-pointer malyon-frame-pointer) 8)
              (length arguments)))
     (setq malyon-instruction-pointer (* malyon-packed-multiplier routine))
     (let ((args (malyon-read-code-byte)) (value nil))
       (if malyon-game-state-quetzal
-          (let ((id (lsh (aref malyon-stack malyon-frame-pointer) -8)))
-            (malyon-push-stack (logior (lsh (+ 1 id) 8) args))))
+          (let ((id (ash (aref malyon-stack malyon-frame-pointer) -8)))
+            (malyon-push-stack (logior (ash (+ 1 id) 8) args))))
       (setq malyon-frame-pointer malyon-stack-pointer)
       (while (> args 0)
         (setq value (if (< malyon-story-version 5) (malyon-read-code-word) 0))
@@ -2311,7 +2311,7 @@ stack pointer, the frame pointer, and the stack itself."
     (setq offset (logand byte 63))
     (if (= 0 (logand byte 64))
         (progn
-          (setq offset (logior (lsh offset 8) (malyon-read-code-byte)))
+          (setq offset (logior (ash offset 8) (malyon-read-code-byte)))
           (if (>= offset 8192) (setq offset (- offset 16384)))))
     (if (or (and iftrue condition) (and (not iftrue) (not condition)))
         (progn
@@ -2326,7 +2326,7 @@ stack pointer, the frame pointer, and the stack itself."
   (setq malyon-stack-pointer malyon-frame-pointer)
   (if malyon-game-state-quetzal (malyon-pop-stack))
   (setq malyon-frame-pointer
-        (- malyon-stack-pointer 1 (lsh (malyon-pop-stack) -8)))
+        (- malyon-stack-pointer 1 (ash (malyon-pop-stack) -8)))
   (setq malyon-instruction-pointer (malyon-pop-stack))
   (let ((result (malyon-pop-stack))
         (store  (malyon-pop-stack)))
@@ -2334,7 +2334,7 @@ stack pointer, the frame pointer, and the stack itself."
         (malyon-return-store result value)
       (malyon-return-ignore result value))))
 
-(defun malyon-return-ignore (where value)
+(defun malyon-return-ignore (_where _value)
   "Return from a routine ignoring the result.")
 
 (defun malyon-return-store (where value)
@@ -2360,9 +2360,9 @@ of arguments, and a list of the evaluation stack elements."
   (let* ((has-result   (zerop (aref stack fp)))
          (result-addr  (if has-result (aref stack (+ 1 fp)) nil))
          (return-addr  (aref stack (+ 2 fp)))
-         (offset       (lsh (aref stack (+ 3 fp)) -8))
+         (offset       (ash (aref stack (+ 3 fp)) -8))
          (num-args     (logand 255 (aref stack (+ 3 fp))))
-         (frame-id     (lsh (aref stack (+ 4 fp)) -8))
+         (frame-id     (ash (aref stack (+ 4 fp)) -8))
          (num-locals   (logand 255 (aref stack (+ 4 fp))))
          (start-locals (+ 5 fp))
          (start-eval   (+ 5 fp num-locals))
@@ -2398,11 +2398,11 @@ of arguments, and a list of the evaluation stack elements."
   (malyon-restore-quetzal-push-stack (if result result 0))
   (malyon-restore-quetzal-push-stack return-addr)
   (malyon-restore-quetzal-push-stack
-   (logior (lsh (- malyon-restore-quetzal-stack-pointer
+   (logior (ash (- malyon-restore-quetzal-stack-pointer
                    malyon-restore-quetzal-frame-pointer) 8)
            num-args))
   (malyon-restore-quetzal-push-stack
-   (logior (lsh frame-id 8) (length local-vars)))
+   (logior (ash frame-id 8) (length local-vars)))
   (setq malyon-restore-quetzal-frame-pointer
         malyon-restore-quetzal-stack-pointer)
   (while (not (null local-vars))
@@ -2447,21 +2447,21 @@ of arguments, and a list of the evaluation stack elements."
             ((= var 32768) (setq op (cons (malyon-read-variable
                                            (malyon-read-code-byte)) op)))
             (t             (setq specifier 0)))
-      (setq specifier (logand 65535 (lsh specifier 2)))
+      (setq specifier (logand 65535 (ash specifier 2)))
       (setq var  (logand specifier 49152)))
     (nreverse op)))
 
-(defsubst malyon-fetch-extended (opcode)
+(defsubst malyon-fetch-extended (_opcode)
   "Fetch operands for an extended instruction."
   (malyon-fetch-variable-operands
-   (logior (lsh (malyon-read-code-byte) 8) 255)))
+   (logior (ash (malyon-read-code-byte) 8) 255)))
 
 (defsubst malyon-fetch-variable (opcode)
   "Fetch operands for a variable instruction."
   (malyon-fetch-variable-operands
    (if (or (= opcode 236) (= opcode 250))
        (malyon-read-code-word)
-     (logior (lsh (malyon-read-code-byte) 8) 255))))
+     (logior (ash (malyon-read-code-byte) 8) 255))))
 
 (defsubst malyon-fetch-short (opcode)
   "Fetch operands for a short instruction."
@@ -2512,7 +2512,7 @@ Repeat ad infinitum."
   "Bitwise and."
   (malyon-store-variable (malyon-read-code-byte) (logand a b)))
 
-(defun malyon-opcode-aread (text parse &optional time routine)
+(defun malyon-opcode-aread (text parse &optional _time _routine)
   "Read input text."
   (setq malyon-aread-text text)
   (setq malyon-aread-parse parse)
@@ -2551,7 +2551,7 @@ shift preserves the sign bit (the arithmetic shift)."
   (malyon-store-variable
    (malyon-read-code-byte)
    (if malyon-game-state-quetzal
-       (lsh (aref malyon-stack malyon-frame-pointer) -8)
+       (ash (aref malyon-stack malyon-frame-pointer) -8)
      malyon-frame-pointer)))
 
 (defun malyon-opcode-check-arg-count (count)
@@ -2562,17 +2562,17 @@ shift preserves the sign bit (the arithmetic shift)."
                                    (- malyon-frame-pointer 1)
                                  malyon-frame-pointer))))))
 
-(defun malyon-opcode-check-unicode (char)
+(defun malyon-opcode-check-unicode (_char)
   "Check whether the given character is valid for input/output."
   (malyon-store-variable (malyon-read-code-byte) 0))
 
 (defun malyon-opcode-clear-attr (object attribute)
   "Clear the given attribute in the given object."
   (let ((attributes (malyon-object-address object))
-        (byte       (lsh attribute -3)))
+        (byte       (ash attribute -3)))
     (malyon-store-byte (+ attributes byte)
                        (logand (malyon-read-byte (+ attributes byte))
-                               (logxor (lsh 128 (- (logand attribute 7)))
+                               (logxor (ash 128 (- (logand attribute 7)))
                                        255)))))
 
 (defun malyon-opcode-copy-table (first second size)
@@ -2698,7 +2698,7 @@ The result is stored at encoded."
      (malyon-read-code-byte)
      (cond ((zerop address)
             (malyon-read-word (+ malyon-object-table (* 2 (- property 1)))))
-           ((and (<  malyon-story-version 5) (zerop (lsh size -5)))
+           ((and (<  malyon-story-version 5) (zerop (ash size -5)))
             (malyon-read-byte (+ address 1)))
            ((and (>= malyon-story-version 5) (zerop (logand 192 size)))
             (malyon-read-byte (+ address 1)))
@@ -2724,8 +2724,8 @@ on it); without the guard the address arithmetic reads out of bounds at -1."
     (let ((size (malyon-read-byte (- property 1))))
       (malyon-store-variable
        (malyon-read-code-byte)
-       (cond ((< malyon-story-version 5) (+ 1 (lsh size -5)))
-             ((zerop (logand 128 size))  (+ 1 (lsh size -6)))
+       (cond ((< malyon-story-version 5) (+ 1 (ash size -5)))
+             ((zerop (logand 128 size))  (+ 1 (ash size -6)))
              ((zerop (logand  63 size))  64)
              (t                          (logand 63 size)))))))
 
@@ -2735,7 +2735,7 @@ on it); without the guard the address arithmetic reads out of bounds at -1."
     (malyon-store-variable (malyon-read-code-byte) sibling)
     (malyon-jump-if (/= 0 sibling))))
 
-(defun malyon-opcode-illegal (&rest ignore)
+(defun malyon-opcode-illegal (&rest _ignore)
   "Print an error message and exit the interpreter."
   (malyon-fatal-error "illegal opcode."))
 
@@ -2840,7 +2840,7 @@ the right shift zero-fills (the logical shift)."
   "Print a newline."
   (malyon-newline))
 
-(defun malyon-opcode-nop (&rest ignore)
+(defun malyon-opcode-nop (&rest _ignore)
   "Do nothing.")
 
 (defun malyon-opcode-not (a)
@@ -2920,12 +2920,12 @@ the right shift zero-fills (the logical shift)."
       (setq address (+ skip address))
       (setq y (+ 1 y)))))
 
-(defun malyon-opcode-print-unicode (char)
+(defun malyon-opcode-print-unicode (_char)
   "Prints a unicode character.")
 
 (defun malyon-opcode-pull (variable)
   "Pull value off stack.
-An indirect reference: storing to the stack (VARIABLE 0) replaces the top in place."
+An indirect store: VARIABLE 0 replaces the top of stack in place."
   (malyon-store-variable-in-place variable (malyon-pop-stack)))
 
 (defun malyon-opcode-push (value)
@@ -2938,7 +2938,7 @@ An indirect reference: storing to the stack (VARIABLE 0) replaces the top in pla
          (size    (malyon-read-byte address)))
     (cond ((= address 0)
            (malyon-fatal-error "property does not exist."))
-          ((and (<  malyon-story-version 5) (zerop (lsh size -5)))
+          ((and (<  malyon-story-version 5) (zerop (ash size -5)))
            (malyon-store-byte (+ 1 address) (logand 255 value)))
           ((and (>= malyon-story-version 5) (zerop (logand size 192)))
            (malyon-store-byte (+ 1 address) (logand 255 value)))
@@ -2966,7 +2966,7 @@ generator (e.g. for reproducible testing) got an unseeded sequence."
            (random (if (zerop n) t (number-to-string n)))
            (malyon-store-variable store 0)))))
 
-(defun malyon-opcode-read-char (&optional device &rest ignore)
+(defun malyon-opcode-read-char (&optional device &rest _ignore)
   "Read a character."
   (if (and device (/= 1 device))
       (malyon-fatal-error "illegal device specified in read_char."))
@@ -3065,12 +3065,12 @@ only one undo slot, so a second restore looped back to the same point."
 (defun malyon-opcode-set-attr (object attribute)
   "Set the given attribute in the given object."
   (let ((attributes (malyon-object-address object))
-        (byte       (lsh attribute -3)))
+        (byte       (ash attribute -3)))
     (malyon-store-byte (+ attributes byte)
                        (logior (malyon-read-byte (+ attributes byte))
-                               (lsh 128 (- (logand attribute 7)))))))
+                               (ash 128 (- (logand attribute 7)))))))
 
-(defun malyon-opcode-set-color (foreground background)
+(defun malyon-opcode-set-color (_foreground _background)
   "Sets the fore- and background colors ie. does nothing.")
 
 (defun malyon-opcode-set-cursor (&optional line column)
@@ -3099,7 +3099,7 @@ only one undo slot, so a second restore looped back to the same point."
       (beginning-of-line))
     (setq malyon-status-buffer-point (point))))
 
-(defun malyon-opcode-set-font (font)
+(defun malyon-opcode-set-font (_font)
   "Sets the font if available or 0 otherwise."
   (malyon-store-variable (malyon-read-code-byte) 0))
 
@@ -3149,7 +3149,7 @@ only one undo slot, so a second restore looped back to the same point."
 
 (defun malyon-opcode-store (variable value)
   "Store a value in a variable.
-An indirect reference: storing to the stack (VARIABLE 0) replaces the top in place."
+An indirect store: VARIABLE 0 replaces the top of stack in place."
   (malyon-store-variable-in-place variable value))
 
 (defun malyon-opcode-storeb (array index value)
@@ -3175,21 +3175,21 @@ INDEX is signed, so a negative index writes below ARRAY."
   "Jump depending on the given attribute in the given object."
   (malyon-jump-if
    (/= 0 (logand (malyon-read-byte (+ (malyon-object-address object)
-                                      (lsh attribute -3)))
-                 (lsh 128 (- (logand attribute 7)))))))
+                                      (ash attribute -3)))
+                 (ash 128 (- (logand attribute 7)))))))
 
 (defun malyon-opcode-throw (value frame)
   "Return from the given stack frame."
   (if malyon-game-state-quetzal
-      (let ((id (lsh (aref malyon-stack malyon-frame-pointer) -8)))
+      (let ((id (ash (aref malyon-stack malyon-frame-pointer) -8)))
         (while (/= frame id)
           (setq malyon-stack-pointer malyon-frame-pointer)
           (malyon-pop-stack)
           (setq malyon-frame-pointer
-                (- malyon-stack-pointer 1 (lsh (malyon-pop-stack) -8)))
+                (- malyon-stack-pointer 1 (ash (malyon-pop-stack) -8)))
           (malyon-pop-stack)
           (malyon-pop-stack)
-          (setq id (lsh (aref malyon-stack malyon-frame-pointer) -8))))
+          (setq id (ash (aref malyon-stack malyon-frame-pointer) -8))))
     (setq malyon-frame-pointer frame))
   (malyon-return value))
 
@@ -3320,63 +3320,63 @@ live memory, which the game may have altered in its dynamic-memory region."
            (insert input)
            (malyon-adjust-transcript)))))
 
-(defun malyon-beginning-of-line (arg)
+(defun malyon-beginning-of-line (_arg)
   "Go to the beginning of the line."
   (interactive "p")
   (if (> malyon-aread-beginning-of-line (point))
       (beginning-of-line)
     (goto-char malyon-aread-beginning-of-line)))
 
-(defun malyon-kill-region (arg)
+(defun malyon-kill-region (_arg)
   "Kill region."
   (interactive "p")
   (if (<= malyon-aread-beginning-of-line (point))
       (kill-region (point) (mark))
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-kill-line (arg)
+(defun malyon-kill-line (_arg)
   "Kill rest of the current line."
   (interactive "p")
   (if (<= malyon-aread-beginning-of-line (point))
       (kill-line)
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-kill-word (arg)
+(defun malyon-kill-word (_arg)
   "Kill the current word."
   (interactive "p")
   (if (<= malyon-aread-beginning-of-line (point))
       (kill-word 1)
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-yank (arg)
+(defun malyon-yank (_arg)
   "Yank."
   (interactive "p")
   (if (<= malyon-aread-beginning-of-line (point))
       (yank)
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-yank-pop (arg)
+(defun malyon-yank-pop (_arg)
   "Yank pop."
   (interactive "p")
   (if (<= malyon-aread-beginning-of-line (point))
       (yank-pop 1)
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-delete-char (arg)
+(defun malyon-delete-char (_arg)
   "Delete a character."
   (interactive "p")
   (if (<= malyon-aread-beginning-of-line (point))
       (delete-char 1)
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-backward-delete-char (arg)
+(defun malyon-backward-delete-char (_arg)
   "Delete a character backwards."
   (interactive "p")
   (if (< malyon-aread-beginning-of-line (point))
       (backward-delete-char-untabify 1)
     (message "Editing is restricted to the input prompt.")))
 
-(defun malyon-self-insert-command (arg)
+(defun malyon-self-insert-command (_arg)
   "Insert a character."
   (interactive "p")
   (if (> malyon-aread-beginning-of-line (point))
