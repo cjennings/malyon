@@ -1077,13 +1077,23 @@ bugs, testing, suggesting and/or contributing improvements:
 (defun malyon-initialize-opcodes ()
   "Initialize the opcode table used by the story file."
   (cond ((< malyon-story-version 5)
+         ;; 1OP:15 is `not' in v1-4 (a store opcode) but `call_1n' in v5+. The
+         ;; short-form encoding puts the operand type in bits 4-5, so the same
+         ;; opcode appears at 143 (large const), 159 (small const), and 175
+         ;; (variable); all three must be patched, or `not' with a small-const
+         ;; or variable operand runs `call_1n' and treats the value as a routine
+         ;; address.
          (aset malyon-opcodes 143 'malyon-opcode-not)
+         (aset malyon-opcodes 159 'malyon-opcode-not)
+         (aset malyon-opcodes 175 'malyon-opcode-not)
          (aset malyon-opcodes 181 'malyon-opcode-save)
          (aset malyon-opcodes 182 'malyon-opcode-restore)
          (aset malyon-opcodes 185 'malyon-opcode-pop)
          (aset malyon-opcodes 188 'malyon-opcode-show-status))
         (t
          (aset malyon-opcodes 143 'malyon-opcode-calln)
+         (aset malyon-opcodes 159 'malyon-opcode-calln)
+         (aset malyon-opcodes 175 'malyon-opcode-calln)
          (aset malyon-opcodes 181 'malyon-opcode-illegal)
          (aset malyon-opcodes 182 'malyon-opcode-illegal)
          (aset malyon-opcodes 185 'malyon-opcode-catch)
