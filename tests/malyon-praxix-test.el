@@ -4,7 +4,8 @@
 ;; menu-driven: send "all" to run every section, then "quit". Each section prints
 ;; "Passed." or "N tests failed", and the run ends with an overall summary.
 ;;
-;; Two things are asserted:
+;; It is compiled to versions 5 and 8 (praxix uses v5+ features, so there is no
+;; v3 build). Two things are asserted for each:
 ;;  - praxix runs to completion without crashing the interpreter. This guards the
 ;;    crashes already fixed (signed array indices in loadw/loadb/storew/storeb,
 ;;    and get_prop_len 0), either of which aborted the run mid-suite.
@@ -18,26 +19,31 @@
                                            (file-name-directory
                                             (or load-file-name buffer-file-name))))
 
-(defvar malyon-praxix-story
-  (expand-file-name "fixtures/praxix.z5"
-                    (file-name-directory (or load-file-name buffer-file-name))))
+(defvar malyon-praxix-dir
+  (file-name-directory (or load-file-name buffer-file-name)))
 
-(defun malyon-praxix--run ()
-  "Run praxix through every test and return its transcript."
-  (plist-get (malyon-harness-run malyon-praxix-story '("all" "quit" "quit"))
+(defun malyon-praxix--run (version)
+  "Run praxix for VERSION through every test and return its transcript."
+  (plist-get (malyon-harness-run
+              (expand-file-name (format "fixtures/praxix.z%d" version)
+                                malyon-praxix-dir)
+              '("all" "quit" "quit"))
              :transcript))
 
-(ert-deftest malyon-praxix-runs-to-completion ()
-  "praxix runs every section and reaches its goodbye without crashing."
-  (let ((transcript (malyon-praxix--run)))
+(defun malyon-praxix--check-version (version)
+  "Run praxix for VERSION and assert it completes with every section passing."
+  (let ((transcript (malyon-praxix--run version)))
+    ;; A crash would abort before the goodbye and summary lines.
     (should (string-match-p "Goodbye\\." transcript))
-    ;; A crash would abort before the overall summary line is printed.
-    (should (string-match-p "tests failed overall\\|All tests passed" transcript))))
-
-(ert-deftest malyon-praxix-all-pass ()
-  "praxix reports every section passing (no failures overall)."
-  (let ((transcript (malyon-praxix--run)))
     (should (string-match-p "All tests passed" transcript))
     (should-not (string-match-p "tests failed overall" transcript))))
+
+(ert-deftest malyon-praxix-v5 ()
+  "praxix.z5 (version 5) passes every section."
+  (malyon-praxix--check-version 5))
+
+(ert-deftest malyon-praxix-v8 ()
+  "praxix.z8 (version 8) passes every section."
+  (malyon-praxix--check-version 8))
 
 ;;; malyon-praxix-test.el ends here
