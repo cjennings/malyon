@@ -2705,14 +2705,18 @@ The result is stored at encoded."
                            (if (zerop address) 0 (+ address offset)))))
 
 (defun malyon-opcode-get-prop-len (property)
-  "Get the length of the object's property."
-  (let ((size (malyon-read-byte (- property 1))))
-    (malyon-store-variable
-     (malyon-read-code-byte)
-     (cond ((< malyon-story-version 5) (+ 1 (lsh size -5)))
-           ((zerop (logand 128 size))  (+ 1 (lsh size -6)))
-           ((zerop (logand  63 size))  64)
-           (t                          (logand 63 size))))))
+  "Get the length of the object's property.
+The standard requires get_prop_len 0 to return 0 (Inform library code relies
+on it); without the guard the address arithmetic reads out of bounds at -1."
+  (if (zerop property)
+      (malyon-store-variable (malyon-read-code-byte) 0)
+    (let ((size (malyon-read-byte (- property 1))))
+      (malyon-store-variable
+       (malyon-read-code-byte)
+       (cond ((< malyon-story-version 5) (+ 1 (lsh size -5)))
+             ((zerop (logand 128 size))  (+ 1 (lsh size -6)))
+             ((zerop (logand  63 size))  64)
+             (t                          (logand 63 size)))))))
 
 (defun malyon-opcode-get-sibling (object)
   "Get the next object in the tree and jump."
@@ -2787,14 +2791,17 @@ An indirect reference: reading the stack (VARIABLE 0) peeks the top in place."
                          (malyon-read-variable-in-place variable)))
 
 (defun malyon-opcode-loadb (array index)
-  "Load an array element into a variable."
+  "Load an array element into a variable.
+INDEX is signed, so a negative index reads below ARRAY."
   (malyon-store-variable (malyon-read-code-byte)
-                         (malyon-read-byte (+ array index))))
+                         (malyon-read-byte (+ array (malyon-number index)))))
 
 (defun malyon-opcode-loadw (array index)
-  "Load an array element into a variable."
+  "Load an array element into a variable.
+INDEX is signed, so a negative index reads below ARRAY; passing the raw
+unsigned operand would turn -1 into a 65535-word offset past the file."
   (malyon-store-variable (malyon-read-code-byte)
-                         (malyon-read-word (+ array (* 2 index)))))
+                         (malyon-read-word (+ array (* 2 (malyon-number index))))))
 
 (defun malyon-opcode-log-shift (value places)
   "Logical shift.
@@ -3121,12 +3128,14 @@ An indirect reference: storing to the stack (VARIABLE 0) replaces the top in pla
   (malyon-store-variable-in-place variable value))
 
 (defun malyon-opcode-storeb (array index value)
-  "Store a value in an array at the given index."
-  (malyon-store-byte (+ array index) value))
+  "Store a value in an array at the given index.
+INDEX is signed, so a negative index writes below ARRAY."
+  (malyon-store-byte (+ array (malyon-number index)) value))
 
 (defun malyon-opcode-storew (array index value)
-  "Store a value in an array at the given index."
-  (malyon-store-word (+ array (* 2 index)) value))
+  "Store a value in an array at the given index.
+INDEX is signed, so a negative index writes below ARRAY."
+  (malyon-store-word (+ array (* 2 (malyon-number index))) value))
 
 (defun malyon-opcode-sub (a b)
   "Subtraction."
